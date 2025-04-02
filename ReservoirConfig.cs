@@ -6,36 +6,22 @@ using System.Threading.Tasks;
 
 namespace ShaleOilWellTest
 {
-    internal class ReservoirConfig
+    internal class ReservoirConfig(double h, double k, double Bo, double mu,
+        double ct, double Cs, double rw, double re, double phi, double s, double sf,double xf)
     {
         public double Pi;
-        public double h;
-        public double k;
-        public double Bo;
-        public double mu;
-        public double ct;
-        public double Cs;
-        public double rw;
-        public double re;
-        public double phi;
-        public double s;
-        public double sf;
-
-        public ReservoirConfig(double h, double k, double Bo, double mu, 
-            double ct, double Cs, double rw, double re, double phi, double s, double sf) 
-        {
-            this.h = h;
-            this.k = k;
-            this.Bo = Bo;
-            this.mu = mu;
-            this.ct = ct;
-            this.Cs = Cs;
-            this.rw = rw;
-            this.phi = phi;
-            this.s = s;
-            this.re = re;
-            this.sf = sf;
-        }
+        public double h = h;
+        public double k = k;
+        public double Bo = Bo;
+        public double mu = mu;
+        public double ct = ct;
+        public double Cs = Cs;
+        public double rw = rw;
+        public double re = re;
+        public double phi = phi;
+        public double s = s;
+        public double sf = sf;
+        public double xf = xf;
 
         //无因次化
         public double p_D { get; set; }
@@ -46,19 +32,25 @@ namespace ShaleOilWellTest
         public double avgphiCt { get; set; }
         public double eta { get; set;}
         public double zeta { get; set; }
+        public double avgeta { get; set; }
+        public double CsD { get; set; }
+        public double reD { get; set; }
         public void factorlessness(ReservoirConfig config)
-        {   
-
-            h_t = h + config.h;
+        {
+             reD = re / xf;
+             h_t = h + config.h;
             //平均流度
-            avgLambda = h / h_t * (config.k/config.mu+k/mu);
+            avgLambda = h / h_t * (config.k / config.mu + k / mu);
             //平均储容系数
-            avgphiCt = h/h_t*(phi*ct+config.phi*config.ct);
+            avgphiCt = 1 / h_t * (phi * ct * h + config.phi * config.ct * config.h);
             //平均导压系数
             eta = (avgLambda/ avgphiCt);
 
             zeta = k / mu * h / (avgLambda * h_t);
             omega = phi * ct * h / (avgphiCt * h_t);
+
+            avgeta = zeta / omega;
+            CsD = Cs / (6.2832 * avgphiCt * h_t * xf * xf);
         }
     }
 }

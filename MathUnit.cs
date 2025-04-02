@@ -26,25 +26,26 @@ namespace ShaleOilWellTest
         */
         public static double GetPuwD(double u, ReservoirConfig config)
         {
-            Func<double, double> f1 = xD =>
+            Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
+            Func<double, double> f1 = (xD) =>
             {
-                return SpecialFunctions.BesselK0(Sqrt(u / config.eta) * xD);
+                return SpecialFunctions.BesselK0(xD);
             };
-            Func<double, double> f2 = xD =>
+            Func<double, double> f2 = (xD) =>
             {
-                return SpecialFunctions.BesselI0(Sqrt(u / config.eta) * xD);
+                return SpecialFunctions.BesselI0(Sqrt(u / config.avgeta) * xD);
             };
-            double intg1 = GaussLegendreRule.Integrate(f1, -1, 1, 32);
-            double intg2 = GaussLegendreRule.Integrate(f2, -1, 1, 32);
+            double intg1 = 2* Sqrt(u / config.avgeta) * GaussLegendreRule.Integrate(f1, 1e-4, Sqrt(u / config.avgeta), 32);//+ GaussLegendreRule.Integrate(f1, 1e-2, 1, 32);
+            double intg2 = 2 * GaussLegendreRule.Integrate(f2, 0, 1, 32);
 
             double omega = config.omega;// config.phi * config.ct * config.h / (config.avgphiCt * config.h_t);//0.5;//
             double zeta = config.zeta;//(config.k / config.mu) * config.h / (config.avgLambda * config.h_t);//1; //
 
-            double value_one = SpecialFunctions.BesselK1(Sqrt(u/config.eta)*config.re);
-            double value_two = SpecialFunctions.BesselI1(Sqrt(Sqrt(u / config.eta) * config.re));
+            double value_one = SpecialFunctions.BesselK1(Sqrt(u / config.avgeta) * config.reD);
+            double value_two = SpecialFunctions.BesselI1(Sqrt(u / config.avgeta) * config.reD);
             double value_three = 1 / (2 * u * zeta);
-            double value_four = config.sf/u;
-            double p_D = value_three*value_one/value_two*intg2 + value_three*intg1 + value_four;
+            double value_four = config.sf / u;
+            double p_D = value_three * value_one / value_two * intg2 + value_three * intg1 + value_four;
             return p_D;
 
         }
@@ -79,7 +80,7 @@ namespace ShaleOilWellTest
             //井筒系数无因次化
             for(int i = 0; i < 2; i++)
             {
-                value_2 += config[i].Cs / (6.2832 * config[i].avgphiCt * config[i].h_t * config[i].rw * config[i].rw);
+                value_2 += config[i].Cs / (6.2832 * config[i].avgphiCt * config[i].h_t * config[i].xf * config[i].xf);
             }
             double value = 1 / (value_1 + u * u * value_2);
             return value;
@@ -125,6 +126,7 @@ namespace ShaleOilWellTest
             if (n % 2 == 0)
             {
                 double ln2 = Math.Log(2) / t;
+                Debug.WriteLine("ln2: " + ln2);
                 for (int i = 1; i <= n; i++)
                 {
                     //f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储                                             
@@ -225,7 +227,7 @@ namespace ShaleOilWellTest
             {
                 do
                 {
-                    N = N * (n - 1);
+                    N *= (n - 1);
                     n--;
                 }
                 while (n > 2);

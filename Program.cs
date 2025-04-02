@@ -1,3 +1,5 @@
+using ShaleOilWellTest;
+
 namespace ShaleOilWellTest_单重介质压裂
 {
     internal static class Program
