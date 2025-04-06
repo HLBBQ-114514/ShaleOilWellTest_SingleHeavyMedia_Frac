@@ -13,10 +13,14 @@ namespace ShaleOilWellTest
         {
             
             ReservoirConfig[] configs = new ReservoirConfig[2];
-            ReservoirConfig config1 = new ReservoirConfig(2, 0.0001, 1.5618E-4, 15, 3e-4, 0.12,200, 0.1, 0.06, 2 ,0.1,100);
-            config1.Pi = 32;
-            ReservoirConfig config2 = new ReservoirConfig(4, 0.0002, 2.5618E-4, 12, 5e-4, 0.12,200, 0.1, 0.1, 1.5,0.1, 100);//4, 0.0002, 2.5618E-4, 12, 5e-4, 1.4, 0.1, 0.12, 1.5
-            config2.Pi = 32;
+            ReservoirConfig config1 = new(2, 0.0001, 1.5618E-4, 15, 3e-4, 0.12, 200, 0.1, 0.06, 2, 0.1, 100)
+            {
+                Pi = 32
+            };
+            ReservoirConfig config2 = new(4, 0.0002, 2.5618E-4, 12, 5e-4, 0.12, 200, 0.1, 0.1, 1.5, 0.1, 100)
+            {
+                Pi = 32
+            };//4, 0.0002, 2.5618E-4, 12, 5e-4, 1.4, 0.1, 0.12, 1.5
             config1.factorlessness(config2);
             config2.factorlessness(config1);
             configs[0] = config1;
