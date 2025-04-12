@@ -24,32 +24,44 @@ namespace ShaleOilWellTest
         * </summary>
         * <param name="u">Laplace变量</param>
         */
-        public static double GetPuwD(double u, ReservoirConfig config)
+        public static double GetPuwD(double u, ReservoirConfigDoubleMedia config)
         {
-            Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
+            //double fu = config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda*config.omega*config.omegaM/config.kf/config.omegaF)
+            //   -config.lambdaF + config.omega * config.omegaF*u/config.zeta;
+            double fu = config.lambdaF * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
+                + config.omega * config.omegaF / config.zeta;
+            fu *= u;
+            Debug.WriteLine("fu:\t"+fu+"\tA:\t"+ config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
+                + "\tA2:\t" + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF
+                + "\tB:\t" + config.omega * config.omegaF * u / config.zeta);
+
+            //Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
             Func<double, double> f1 = (xD) =>
             {
                 return SpecialFunctions.BesselK0(xD);
             };
             Func<double, double> f2 = (xD) =>
             {
-                return SpecialFunctions.BesselI0(Sqrt(u / config.avgeta) * xD);
+                return SpecialFunctions.BesselI0(Sqrt(fu)*xD);
             };
-            double intg1 = 2* Sqrt(u / config.avgeta) * GaussLegendreRule.Integrate(f1, 1e-4, Sqrt(u / config.avgeta), 32);//+ GaussLegendreRule.Integrate(f1, 1e-2, 1, 32);
+            double intg1 = 2 / Sqrt(fu) * GaussLegendreRule.Integrate(f1, 1e-8, Sqrt(fu), 32);//+ GaussLegendreRule.Integrate(f1, 1e-2, 1, 32);
             double intg2 = 2 * GaussLegendreRule.Integrate(f2, 0, 1, 32);
 
-            double omega = config.omega;// config.phi * config.ct * config.h / (config.avgphiCt * config.h_t);//0.5;//
-            double zeta = config.zeta;//(config.k / config.mu) * config.h / (config.avgLambda * config.h_t);//1; //
-
-            double value_one = SpecialFunctions.BesselK1(Sqrt(u / config.avgeta) * config.reD);
-            double value_two = SpecialFunctions.BesselI1(Sqrt(u / config.avgeta) * config.reD);
-            double value_three = 1 / (2 * u * zeta);
-            double value_four = config.sf / u;
-            double p_D = value_three * value_one / value_two * intg2 + value_three * intg1 + value_four;
+            
+            double value_one = SpecialFunctions.BesselK1(Sqrt(fu) * config.reD);
+            double value_two = SpecialFunctions.BesselI1(Sqrt(fu) * config.reD);
+            //double A = value_one / (u/config.zeta/Sqrt(fu)*(SpecialFunctions.BesselK1(Sqrt(fu)) * value_two-value_one* SpecialFunctions.BesselI1(Sqrt(fu))));
+            //double B = A / value_one * value_two;
+            double value_three = 1 / (u);
+            //double value_four = config.sf / u;
+            //double p_D = A * intg2 + B * intg1;
+            double p_D = value_three * intg1 + value_three * value_one / value_two * intg2;
             return p_D;
 
         }
-        public static double[] GetPwjD(double u, ReservoirConfig[] config)
+
+
+        public static double[] GetPwjD(double u, ReservoirConfigDoubleMedia[] config)
         {
             double[] value = new double[2];
             for(int i = 0; i < 2; i++)
@@ -59,7 +71,7 @@ namespace ShaleOilWellTest
             
             return value;
         }
-        public static double GetPwD(double u, ReservoirConfig[] config)
+        public static double GetPwD(double u, ReservoirConfigDoubleMedia[] config)
         {
             double pwd = 0;
             foreach(var p in GetPwjD(u, config))
@@ -69,7 +81,7 @@ namespace ShaleOilWellTest
             return pwd;
         }
 
-        public static double GetPwCD(double u, ReservoirConfig[] config)
+        public static double GetPwCD(double u, ReservoirConfigDoubleMedia[] config)
         {
             double value_1 = 0;
             double value_2 = 0;
@@ -120,13 +132,13 @@ namespace ShaleOilWellTest
          * <param name="t">时间</param>
          * <param name="n">stefest反演系数N</param>
          */
-        public static double Getf(double t, int n, ReservoirConfig[] config)
+        public static double Getf(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
             double f = 0;
             if (n % 2 == 0)
             {
                 double ln2 = Math.Log(2) / t;
-                Debug.WriteLine("ln2: " + ln2);
+                //Debug.WriteLine("ln2: " + ln2);
                 for (int i = 1; i <= n; i++)
                 {
                     //f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储                                             
@@ -137,7 +149,7 @@ namespace ShaleOilWellTest
             }
             return f;
         }
-        public static double[] GetQ(double t, int n, ReservoirConfig[] config)
+        public static double[] GetQ(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
             double[] qwf = new double[2];
             if (n % 2 == 0)
@@ -161,7 +173,7 @@ namespace ShaleOilWellTest
             return qwf;
         }
 
-        public static double[] GetCQ(double t, int n, ReservoirConfig[] config)
+        public static double[] GetCQ(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
             double[] qwf = new double[2];
             if (n % 2 == 0)
@@ -187,7 +199,7 @@ namespace ShaleOilWellTest
             return qwf;
         }
 
-        public static double GetDf(double pwf, double T, int n,ReservoirConfig[] config)
+        public static double GetDf(double pwf, double T, int n, ReservoirConfigDoubleMedia[] config)
         {
             double pwf2 = Getf(T * (1.0001), n, config);
             return Math.Abs(pwf2 - pwf) / .0001;
