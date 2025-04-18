@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Intrinsics;
 using System.Text;
 using System.Threading.Tasks;
 using MathNet.Numerics;
@@ -31,32 +32,34 @@ namespace ShaleOilWellTest
             double fu = config.lambdaF * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
                 + config.omega * config.omegaF / config.zeta;
             fu *= u;
-            Debug.WriteLine("fu:\t"+fu+"\tA:\t"+ config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
+            /*Debug.WriteLine("fu:\t"+fu+"\tA:\t"+ config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
                 + "\tA2:\t" + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF
-                + "\tB:\t" + config.omega * config.omegaF * u / config.zeta);
+                + "\tB:\t" + config.omega * config.omegaF * u / config.zeta);*/
 
-            //Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
-            Func<double, double> f1 = (xD) =>
+                //Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
+            Func<double, double> f1 = (alpha) =>
             {
-                return SpecialFunctions.BesselK0(xD);
+                return SpecialFunctions.BesselK0(alpha);
             };
-            Func<double, double> f2 = (xD) =>
+            Func<double, double> f2 = (alpha) =>
             {
-                return SpecialFunctions.BesselI0(Sqrt(fu)*xD);
+                return SpecialFunctions.BesselI0(Sqrt(fu)*(0.732-alpha));
             };
-            double intg1 = 2 / Sqrt(fu) * GaussLegendreRule.Integrate(f1, 1e-8, Sqrt(fu), 32);//+ GaussLegendreRule.Integrate(f1, 1e-2, 1, 32);
+            double intg1 = 2 / Sqrt(fu) * GaussLegendreRule.Integrate(f1, 1e-8, Sqrt(fu)*1.732, 32);//+ GaussLegendreRule.Integrate(f1, 1e-2, 1, 32);
             double intg2 = 2 * GaussLegendreRule.Integrate(f2, 0, 1, 32);
 
             
-            double value_one = SpecialFunctions.BesselK1(Sqrt(fu) * config.reD);
-            double value_two = SpecialFunctions.BesselI1(Sqrt(fu) * config.reD);
+                double value_one = SpecialFunctions.BesselK1(Sqrt(fu) * config.reD);
+                double value_two = SpecialFunctions.BesselI1(Sqrt(fu) * config.reD);
+            
+            
             //double A = value_one / (u/config.zeta/Sqrt(fu)*(SpecialFunctions.BesselK1(Sqrt(fu)) * value_two-value_one* SpecialFunctions.BesselI1(Sqrt(fu))));
             //double B = A / value_one * value_two;
             double value_three = 1 / (u);
             //double value_four = config.sf / u;
             //double p_D = A * intg2 + B * intg1;
             double p_D = value_three * intg1 + value_three * value_one / value_two * intg2;
-            return p_D;
+            return p_D;           
 
         }
 
@@ -71,16 +74,77 @@ namespace ShaleOilWellTest
             
             return value;
         }
+
+        public static double[] 产量递减GetQ(double u, ReservoirConfigDoubleMedia[] config)
+        {
+            double[] value = new double[2];
+            var pvalue = GetPwjD(u, config);
+            for (int i = 0;i < 2; i++)
+            {
+                value[i] = 1 / u / u * pvalue[i];
+            }
+            return value;
+        }
+        public static double[] 产量递减GetQLapalce(double t, ReservoirConfigDoubleMedia[] config)
+        {
+            double[] Q = new double[2];
+            if (6 % 2 == 0)
+            {
+                double ln2 = Math.Log(2) / t;
+                //Debug.WriteLine("ln2: " + ln2);
+               
+                for (int i = 1; i <= 8; i++)
+                {
+                    var value = 产量递减GetQ(ln2 * i, config);
+                    //f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储
+                    for(int j = 0; j < Q.Length; j++)
+                    {
+                        Q[j] += GetV(6, i) * value[j];//井储
+                    }         
+                }
+                for(int i = 0;i < Q.Length; i++)
+                {
+                    Q[i] *= ln2  * (Math.Log(config[i].reD) - 0.5);
+                }
+                
+            }
+            return Q;
+        }
+        public static double[] 产量递减GetQDi(double[] q,double t)
+        {
+/*            double[] value = new double[2];
+            for (int i = 0; i < q.Rank; i++)
+            {
+                for(int j = 0; j < q.Length/q.Rank; j++)
+                {
+                    value[i] += q[i,j];
+                }
+            }
+            return value.Select(q => q / t).ToArray();*/
+            return q.Select(qi => qi / t).ToArray();
+        }
+
+        public static double[] 产能递减GetdQDi(double[] q, double t, ReservoirConfigDoubleMedia[] config)
+        {
+            var dq = 产量递减GetQLapalce(t*1.0001, config);
+            //dq = 产量递减GetQDi(dq, t);
+            for (int i = 0; i < 2; i++)
+            {                
+                dq[i] = Math.Abs((dq[i] - q[i]) / .0001);
+            }
+            return dq;
+        }
+
         public static double GetPwD(double u, ReservoirConfigDoubleMedia[] config)
         {
             double pwd = 0;
             foreach(var p in GetPwjD(u, config))
             {
-                pwd += p;
+                pwd += 1/p;
             }
             return pwd;
         }
-
+        
         public static double GetPwCD(double u, ReservoirConfigDoubleMedia[] config)
         {
             double value_1 = 0;
@@ -142,7 +206,7 @@ namespace ShaleOilWellTest
                 for (int i = 1; i <= n; i++)
                 {
                     //f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储                                             
-                    f += GetV(n, i) * GetPwCD(ln2 * i, config);//井储
+                    f += GetV(n, i) * GetPwD(ln2 * i, config);//井储
                 }
 
                 f = ln2 * f;
