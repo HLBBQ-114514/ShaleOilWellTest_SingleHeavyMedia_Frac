@@ -82,17 +82,26 @@ namespace ShaleOilWellTest
         public double omegaM => omega * 0.95;    
         public double omegaF => omega * 0.05;     
         public double lambdaF { get; set; }
-        public void factorlessness(ReservoirConfigDoubleMedia config, double omega,double zeta,double lambdaF)
+        public void factorlessness(ReservoirConfigDoubleMedia[] configs)
         {
-            //totalPhiCt = (phiM * ctm + phiF * ctf) + (conifg.phiM * conifg.ctm + conifg.phiF * conifg.ctf);
-            h_t = h + config.h;
-            avgLambda = h * (kf / mu + config.kf / config.mu) / h_t;
-            avgphiCt = 1 / h_t * (phiF * ctf * h + config.phiF * config.ctf * config.h);
+            reD = re / xf;
+            for (int i = 0; i < configs.Length; i++)
+            {
+                h_t = configs[i].h;
+                //平均流度
+                avgLambda += (configs[i].kf / configs[i].mu) * configs[i].h;
+                //平均储容系数
+                avgphiCt += (configs[i].phiF * configs[i].ctf * configs[i].h);
+
+            }
+            avgLambda *= 1 / h_t;
+            avgphiCt *= 1 / h_t;
             //平均导压系数
             eta = (avgLambda / avgphiCt);
-            this.omega = omega;
-            this.zeta = zeta;
-            this.lambdaF = lambdaF;
+
+            /*zeta = k / mu * h / (avgLambda * h_t);
+            omega = phi * ct * h / (avgphiCt * h_t);*/
+
         }
     }
 }

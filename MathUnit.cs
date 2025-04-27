@@ -1,15 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Runtime.Intrinsics;
-using System.Text;
-using System.Threading.Tasks;
-using MathNet.Numerics;
+﻿using MathNet.Numerics;
 using MathNet.Numerics.Integration;
-using MathNet.Numerics.LinearAlgebra;
-using MathNet.Numerics.LinearAlgebra.Double;
-using ShaleOilWellTest_单重介质压裂封闭边界;
 using static System.Math;
 namespace ShaleOilWellTest
 {
@@ -43,22 +33,22 @@ namespace ShaleOilWellTest
             };
             Func<double, double> f2 = (alpha) =>
             {
-                return SpecialFunctions.BesselI0(Sqrt(fu)*(0.732-alpha));
+                return SpecialFunctions.BesselI0(Sqrt(fu)*(Abs(0.732-alpha)));
             };
-            double intg1 = 2 / Sqrt(fu) * GaussLegendreRule.Integrate(f1, 1e-8, Sqrt(fu)*1.732, 32);//+ GaussLegendreRule.Integrate(f1, 1e-2, 1, 32);
-            double intg2 = 2 * GaussLegendreRule.Integrate(f2, 0, 1, 32);
+            double intg1 = 1 / Sqrt(fu) * (GaussLegendreRule.Integrate(f1, 0, Sqrt(fu)*(1+0.732) , 32) + GaussLegendreRule.Integrate(f1, 0, Sqrt(fu)*(1 - 0.732), 32));
+            double intg2 = 1 * GaussLegendreRule.Integrate(f2, -1, 1, 32);
 
             
-                double value_one = SpecialFunctions.BesselK1(Sqrt(fu) * config.reD);
-                double value_two = SpecialFunctions.BesselI1(Sqrt(fu) * config.reD);
+            double value_one = SpecialFunctions.BesselK1(Sqrt(fu) * config.reD);
+            double value_two = SpecialFunctions.BesselI1(Sqrt(fu) * config.reD);
             
             
             //double A = value_one / (u/config.zeta/Sqrt(fu)*(SpecialFunctions.BesselK1(Sqrt(fu)) * value_two-value_one* SpecialFunctions.BesselI1(Sqrt(fu))));
             //double B = A / value_one * value_two;
             double value_three = 1 / (u);
-            //double value_four = config.sf / u;
+            double value_four = config.sf / u;
             //double p_D = A * intg2 + B * intg1;
-            double p_D = value_three * intg1 + value_three * value_one / value_two * intg2;
+            double p_D = value_three * intg1 + value_three * value_one / value_two * intg2 + value_four;
             return p_D;           
 
         }
@@ -66,8 +56,8 @@ namespace ShaleOilWellTest
 
         public static double[] GetPwjD(double u, ReservoirConfigDoubleMedia[] config)
         {
-            double[] value = new double[2];
-            for(int i = 0; i < 2; i++)
+            double[] value = new double[config.Length];
+            for(int i = 0; i < config.Length; i++)
             {
                 value[i] = 1 / GetPuwD(u, config[i]);
             }
@@ -77,9 +67,9 @@ namespace ShaleOilWellTest
 
         public static double[] 产量递减GetQ(double u, ReservoirConfigDoubleMedia[] config)
         {
-            double[] value = new double[2];
+            double[] value = new double[config.Length];
             var pvalue = GetPwjD(u, config);
-            for (int i = 0;i < 2; i++)
+            for (int i = 0;i < config.Length; i++)
             {
                 value[i] = 1 / u / u * pvalue[i];
             }
@@ -87,7 +77,7 @@ namespace ShaleOilWellTest
         }
         public static double[] 产量递减GetQLapalce(double t, ReservoirConfigDoubleMedia[] config)
         {
-            double[] Q = new double[2];
+            double[] Q = new double[config.Length];
             if (6 % 2 == 0)
             {
                 double ln2 = Math.Log(2) / t;
@@ -149,12 +139,12 @@ namespace ShaleOilWellTest
         {
             double value_1 = 0;
             double value_2 = 0;
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < config.Length; i++)
             {
                 value_1 += 1 / GetPuwD(u, config[i]);
             }
             //井筒系数无因次化
-            for(int i = 0; i < 2; i++)
+            for(int i = 0; i < config.Length; i++)
             {
                 value_2 += config[i].Cs / (6.2832 * config[i].avgphiCt * config[i].h_t * config[i].xf * config[i].xf);
             }
@@ -164,14 +154,14 @@ namespace ShaleOilWellTest
 
         public static double[] GetQD(double u, double[] pwd)
         {
-            double[] value = new double[2];
+            double[] value = new double[pwd.Length];
             double pw = 0;
             foreach (double p in pwd)
             {
                 pw += p;
             }
 
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < pwd.Length; i++)
             {
                 value[i] = pw / pwd[i] / u;
             }
@@ -181,9 +171,9 @@ namespace ShaleOilWellTest
 
         public static double[] GetQCD(double u, double[] pwd,double pwf)
         {
-            double[] value = new double[2];
+            double[] value = new double[pwd.Length];
 
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < pwd.Length; i++)
             {
                 value[i] = pwf * pwd[i] / u;
             }
@@ -205,8 +195,8 @@ namespace ShaleOilWellTest
                 //Debug.WriteLine("ln2: " + ln2);
                 for (int i = 1; i <= n; i++)
                 {
-                    //f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储                                             
-                    f += GetV(n, i) * GetPwD(ln2 * i, config);//井储
+                    f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储                                             
+                    //f += GetV(n, i) * GetPwCD(ln2 * i, config);//井储
                 }
 
                 f = ln2 * f;
@@ -215,7 +205,7 @@ namespace ShaleOilWellTest
         }
         public static double[] GetQ(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
-            double[] qwf = new double[2];
+            double[] qwf = new double[config.Length];
             if (n % 2 == 0)
             {
                 double ln2 = Math.Log(2) / t;
@@ -224,12 +214,12 @@ namespace ShaleOilWellTest
                     double[] pwd = GetPwjD(ln2 * i, config);
                     
                     double[] qwd = GetQD(ln2 * i, pwd);
-                    for (int j = 0; j < 2; j++)
+                    for (int j = 0; j < config.Length; j++)
                     {
                         qwf[j] = GetV(n, i) * qwd[j];
                     }
                 }
-                for (int i = 0; i < 2; i++)
+                for (int i = 0; i < config.Length; i++)
                 {
                     qwf[i] = ln2 * qwf[i];
                 }                
@@ -239,7 +229,7 @@ namespace ShaleOilWellTest
 
         public static double[] GetCQ(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
-            double[] qwf = new double[2];
+            double[] qwf = new double[config.Length];
             if (n % 2 == 0)
             {
                 double ln2 = Math.Log(2) / t;
@@ -250,12 +240,12 @@ namespace ShaleOilWellTest
                     double pwf = GetPwCD(ln2 * i, config);
                     double[] qwd = GetQCD(ln2 * i, puwd, pwf);
                     //Debug.WriteLine("QD: " + qwd[0] + " " + qwd[1]);
-                    for (int j = 0; j < 2; j++)
+                    for (int j = 0; j < config.Length; j++)
                     {
                         qwf[j] = GetV(n, i) * qwd[j];
                     }
                 }
-                for (int i = 0; i < 2; i++)
+                for (int i = 0; i < config.Length; i++)
                 {
                     qwf[i] = ln2 * qwf[i];
                 }
