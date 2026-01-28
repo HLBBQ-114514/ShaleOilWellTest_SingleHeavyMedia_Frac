@@ -35,29 +35,35 @@ namespace ShaleOilWellTest
         public double avgeta { get; set; }
         public double CsD { get; set; }
         public double reD { get; set; }
-        public void factorlessness(ReservoirConfigMedia config,double omega,double zeta)
+        public double rwD { get; set; }
+        public void factorlessness(ReservoirConfigMedia other, double omega = double.NaN, double zeta = double.NaN, double Lref = 0)
         {
-             reD = re / xf;
-             h_t = h + config.h;
-            //平均流度
-            avgLambda = h / h_t * (config.k / config.mu + k / mu);
-            //平均储容系数
-            avgphiCt = 1 / h_t * (phi * ct * h + config.phi * config.ct * config.h);
-            //平均导压系数
-            eta = (avgLambda/ avgphiCt);
+            double refLen = Lref > 0 ? Lref : rw;
+            double totalH = h + other.h;
 
-            this.zeta = zeta;// k / mu * h / (avgLambda * h_t);
-            this.omega = omega;//phi * ct * h / (avgphiCt * h_t);
+            //rwD = rw / refLen;
+            reD = re / refLen;
+            h_t = totalH;
 
-            avgeta = zeta / omega;
-            CsD = Cs / (6.2832 * avgphiCt * h_t * xf * xf);
+            // 平均流度 / 储容系数（保持学术无因次，但用统一参考长度 refLen 做数值尺度）
+            avgLambda = (k / mu * h + other.k / other.mu * other.h) / totalH;
+            avgphiCt = (phi * ct * h + other.phi * other.ct * other.h) / totalH;
+            eta = avgLambda / avgphiCt;
+
+            double omegaCalc = phi * ct * h / (avgphiCt * totalH);
+            double zetaCalc = k / mu * h / (avgLambda * totalH);
+            this.omega = double.IsNaN(omega) ? omegaCalc : omega;
+            this.zeta = double.IsNaN(zeta) ? zetaCalc : zeta;
+            avgeta = this.zeta / this.omega;
+
+            CsD = Cs / (6.2832 * avgphiCt * totalH * refLen * refLen);
         }
     }
 
     internal class ReservoirConfigDoubleMedia(double h, double k, double Bo, double mu,
-        double ctm,double ctf, double Cs, double rw, double re, double phiM, double phiF, double s, double sf, double xf)
+        double ctm,double ctf, double Cs, double rw, double re, double phiM, double phiF, double s, double sf, double xf,int index)
     {
-        public static double Pi;
+        public double Pi;
         public double h = h;
         public double kf = k;
         public double Bo = Bo;
@@ -72,6 +78,7 @@ namespace ShaleOilWellTest
         public double s = s;
         public double sf = sf;
         public double xf = xf;
+        public int index = index;
         public double theta { get; set; }
         public double xfD;
         public double h_t { get; set; }
@@ -85,30 +92,35 @@ namespace ShaleOilWellTest
         public double omegaM=0.95;    
         public double omegaF=0.05;     
         public double lambdaF { get; set; }
+        public double PiD { get; set; }
         public void factorlessness(ReservoirConfigDoubleMedia[] configs)
         {
             double phiCtM = 0.0;
             var baselayer = configs[0];
             reD = re / baselayer.rw;
             xfD = xf / baselayer.xf;
+            double h_t = 0;
             for (int i = 0; i < configs.Length; i++)
             {
-                h_t = configs[i].h;
+                h_t += configs[i].h;
                 //平均流度
                 avgLambda += (configs[i].kf / configs[i].mu) * configs[i].h;
                 //平均储容系数
                 avgphiCt += (configs[i].phiF * configs[i].ctf * configs[i].h);
                 phiCtM += (configs[i].phiM * configs[i].ctm);
+                
             }
             avgLambda *= 1 / h_t;
             avgphiCt *= 1 / h_t;
-            //平均导压系数
-            eta = (avgLambda / avgphiCt);
+            PiD = 2 * Math.PI * avgLambda * h_t * (configs[0].Pi - this.Pi)/10;
+                //平均导压系数
+                eta = (avgLambda / avgphiCt);
 /*            this.omegaM = this.phiM * this.ctm / (avgphiCt * h_t + phiCtM);
             this.omegaF = 1 - this.omegaM;*/
             zeta = k / mu * h / (avgLambda * h_t);
             omega = phiF * ctf * h / (avgphiCt * h_t);
-            Debug.WriteLine($"zeta:{ zeta}, omega:{ omega}");
+            this.h_t = h_t;
+            Debug.WriteLine($"pi:{PiD} zeta:{ zeta}, omega:{ omega}");
         }
     }
 }

@@ -1,126 +1,337 @@
 ﻿using MathNet.Numerics;
 using MathNet.Numerics.Integration;
-using System.Diagnostics;
+using System;
 using static System.Math;
 namespace ShaleOilWellTest
 {
     internal class MathUnit
     {
-         
-        #region original welltest code
-        /*        static double omega;
-                static double x_j;
-                static double s_j;*/
+        private static class BesselSafe
+        {
+            private const double Euler = 0.5772156649015328606;
+            private const double Small = 1e-6;
+            private const double Large = 50.0;
 
-        /*
-        * <summary>
-        * 在Laplace空间下，求解某个时间的无因次压力(核心)
-        * </summary>
-        * <param name="u">Laplace变量</param>
-        */
+            public static double K0(double x)
+            {
+                if (x < Small)
+                {
+                    double y = x * x / 4.0;
+                    double logTerm = -Log(x / 2.0) - Euler;
+                    return logTerm + y * (1 - logTerm) / 2.0;
+                }
+
+                if (x > Large)
+                {
+                    double factor = Sqrt(PI / (2.0 * x));
+                    return factor * Exp(-x) * (1.0 + 1.0 / (8.0 * x));
+                }
+
+                var v = SpecialFunctions.BesselK0(x);
+                if (double.IsFinite(v)) return v;
+                double fallback = Sqrt(PI / (2.0 * x)) * Exp(-x);
+                return fallback;
+            }
+
+            public static double K1(double x)
+            {
+                if (x < Small)
+                {
+                    // K1 ~ 1/x + x/2*(ln(x/2)+gamma-1/2)
+                    double logTerm = Log(x / 2.0) + Euler - 0.5;
+                    return 1.0 / x + x * logTerm / 2.0;
+                }
+
+                if (x > Large)
+                {
+                    double factor = Sqrt(PI / (2.0 * x)) * Exp(-x);
+                    return factor * (1.0 + 3.0 / (8.0 * x));
+                }
+
+                var v = SpecialFunctions.BesselK1(x);
+                if (double.IsFinite(v)) return v;
+                double fallback = Sqrt(PI / (2.0 * x)) * Exp(-x);
+                return fallback;
+            }
+
+            public static double I0(double x)
+            {
+                double ax = Abs(x);
+                if (ax < Small)
+                {
+                    double y = x * x / 4.0;
+                    return 1.0 + y + y * y / 4.0;
+                }
+
+                if (ax > Large)
+                {
+                    double factor = Exp(ax) / Sqrt(2.0 * PI * ax);
+                    return factor * (1.0 + 1.0 / (8.0 * ax));
+                }
+
+                var v = SpecialFunctions.BesselI0(x);
+                if (double.IsFinite(v)) return v;
+                double fallback = Exp(ax) / Sqrt(2.0 * PI * ax);
+                return fallback;
+            }
+
+            public static double I1(double x)
+            {
+                double ax = Abs(x);
+                if (ax < Small)
+                {
+                    return x / 2.0 + x * x * x / 16.0;
+                }
+
+                if (ax > Large)
+                {
+                    double factor = Exp(ax) / Sqrt(2.0 * PI * ax);
+                    double series = 1.0 - 3.0 / (8.0 * ax);
+                    double val = factor * series;
+                    return x < 0 ? -val : val;
+                }
+
+                var v = SpecialFunctions.BesselI1(x);
+                if (double.IsFinite(v)) return v;
+                double fallback = Exp(ax) / Sqrt(2.0 * PI * ax);
+                return x < 0 ? -fallback : fallback;
+            }
+        }
+
+        // 数值稳定的 Bessel 评估：大 x 用渐近，极小 x 用级数，不做“冻结”裁剪
+        private static double K0Scaled(double x)
+        {
+            if (x <= 0) return double.NaN;
+            if (x < 1e-4)
+            {
+                double y = x * x / 4.0;
+                double logTerm = -Log(x / 2.0) - 0.5772156649015328606;
+                return logTerm + y * (1 - logTerm) / 2.0;
+            }
+            if (x > 80)
+            {
+                double pref = Sqrt(PI / (2.0 * x));
+                return pref * Exp(-x) * (1.0 + 1.0 / (8.0 * x));
+            }
+            return BesselSafe.K0(x);
+        }
+
+        private static double K1Scaled(double x)
+        {
+            if (x <= 0) return double.NaN;
+            if (x < 1e-4)
+            {
+                double logTerm = Log(x / 2.0) + 0.5772156649015328606 - 0.5;
+                return 1.0 / x + x * logTerm / 2.0;
+            }
+            if (x > 80)
+            {
+                double pref = Sqrt(PI / (2.0 * x));
+                return pref * Exp(-x) * (1.0 + 3.0 / (8.0 * x));
+            }
+            return BesselSafe.K1(x);
+        }
+
+        private static double I0Scaled(double x)
+        {
+            double ax = Abs(x);
+            if (ax < 1e-4)
+            {
+                double y = x * x / 4.0;
+                return 1.0 + y + y * y / 4.0;
+            }
+            if (ax > 80)
+            {
+                double pref = Exp(ax) / Sqrt(2.0 * PI * ax);
+                return pref * (1.0 + 1.0 / (8.0 * ax));
+            }
+            return BesselSafe.I0(x);
+        }
+
+        private static double I1Scaled(double x)
+        {
+            double ax = Abs(x);
+            if (ax < 1e-4)
+            {
+                return x / 2.0 + x * x * x / 16.0;
+            }
+            if (ax > 80)
+            {
+                double pref = Exp(ax) / Sqrt(2.0 * PI * ax);
+                double series = 1.0 - 3.0 / (8.0 * ax);
+                double val = pref * series;
+                return x < 0 ? -val : val;
+            }
+            return BesselSafe.I1(x);
+        }
+
+        private static double LogI0(double x)
+        {
+            double ax = Abs(x);
+            if (ax > 50)
+            {
+                // I0 ~ exp(x)/sqrt(2πx)
+                return ax - 0.5 * Log(2 * PI * ax);
+            }
+            if (ax < 1e-4)
+            {
+                double y = x * x / 4.0; // series 1 + y + y^2/4
+                double val = 1.0 + y + y * y / 4.0;
+                return Log(val);
+            }
+            return Log(BesselSafe.I0(x));
+        }
+
+        private static double LogI1(double x)
+        {
+            double ax = Abs(x);
+            if (ax > 50)
+            {
+                // I1 ~ exp(x)/sqrt(2πx) * (1 - 3/(8x))
+                double leading = ax - 0.5 * Log(2 * PI * ax);
+                double corr = Log(1.0 - 3.0 / (8.0 * ax));
+                double logVal = leading + corr;
+                return x < 0 ? logVal + Log(-1.0) : logVal; // sign handled by caller
+            }
+            if (ax < 1e-4)
+            {
+                double val = x / 2.0 + x * x * x / 16.0;
+                return Log(Abs(val));
+            }
+            return Log(Abs(BesselSafe.I1(x)));
+        }
+
+        private static double LogK0(double x)
+        {
+            if (x < 1e-4)
+            {
+                double logTerm = -Log(x / 2.0) - 0.5772156649015328606;
+                // K0 ≈ logTerm
+                return Log(logTerm);
+            }
+            if (x > 50)
+            {
+                // K0 ~ sqrt(pi/(2x)) * exp(-x)
+                return -x + 0.5 * (Log(PI) - Log(2 * x));
+            }
+            return Log(BesselSafe.K0(x));
+        }
+
+        private static double LogK1(double x)
+        {
+            if (x < 1e-4)
+            {
+                // K1 ~ 1/x
+                return -Log(x);
+            }
+            if (x > 50)
+            {
+                // K1 ~ sqrt(pi/(2x)) * exp(-x) * (1 + 3/(8x))
+                double leading = -x + 0.5 * (Log(PI) - Log(2 * x));
+                double corr = Log(1.0 + 3.0 / (8.0 * x));
+                return leading + corr;
+            }
+            return Log(BesselSafe.K1(x));
+        }
+
+        private static double RatioK1OverI1(double x)
+        {
+            if (x <= 0) return double.NaN;
+            double logK = LogK1(x);
+            double logI = LogI1(x);
+            return Exp(logK - logI);
+        }
+
+        private static double RatioK0OverI0(double x)
+        {
+            if (x <= 0) return double.NaN;
+            double logK = LogK0(x);
+            double logI = LogI0(x);
+            return Exp(logK - logI);
+        }
+
+        /// <summary>
+        /// 通用 fu 计算，供不同边界条件复用。
+        /// </summary>
+        private static double ComputeFu(double u, ReservoirConfigDoubleMedia config)
+        {
+            double denominator = config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF;
+            double fuRaw = -config.lambdaF * config.lambdaF / denominator
+                   + config.lambdaF
+                   + config.omega * config.omegaF * u / config.zeta;
+            return fuRaw;
+        }
+
+        /// <summary>
+        /// 计算裂缝两项积分：intg1（K0）与 intg2（I0）。
+        /// </summary>
+        private static (double intg1, double intg2) ComputeFractureIntegrals(double sqrtFu, ReservoirConfigDoubleMedia config)
+        {
+            Func<double, double> f1 = alpha => K0Scaled(alpha);
+            Func<double, double> f2 = alpha => I0Scaled(sqrtFu * Abs(0.732 - alpha));
+
+            double intg1 = 1 / sqrtFu * (
+                GaussLegendreRule.Integrate(f1, 0, sqrtFu * (config.xfD + 0.732), 32) +
+                GaussLegendreRule.Integrate(f1, 0, sqrtFu * Abs(config.xfD - 0.732), 32));
+
+            double intg2 = GaussLegendreRule.Integrate(f2, -config.xfD, config.xfD, 32);
+            return (intg1, intg2);
+        }
+
+
+        #region original welltest code
+
+        /// <summary>
+        /// 在Laplace空间下，求解某个时间的无因次压力(核心)
+        /// </summary>
+        /// <param name="u">Laplace变量</param>
+        /// <param name="config"></param>
+        /// <returns></returns>
         public static double GetPuwD_RECTANGULAR(double u, ReservoirConfigDoubleMedia config)
         {
-            double xi = config.avgLambda * config.omegaM / config.kf / config.omegaF;
-            double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
-               + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            /*            
-            double fu = config.lambdaF * xi / (config.lambdaF + u * xi)
-                    - config.omega * config.omegaF / config.zeta;
-            fu *= u;
-            */
-            
-            /*Debug.WriteLine("fu:\t"+fu+"\tA:\t"+ config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
-                + "\tA2:\t" + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF
-                + "\tB:\t" + config.omega * config.omegaF * u / config.zeta);*/
-
+            double fu = ComputeFu(u, config);
+            if (fu <= 0) return double.NaN;
+            double sqrtFu = Sqrt(fu);
             //Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
-            Func<double, double> f1 = (alpha) =>
-            {
-                return SpecialFunctions.BesselK0(alpha);
-            };
-            Func<double, double> f2 = (alpha) =>
-            {
-                return SpecialFunctions.BesselI0(Sqrt(fu)*(Abs(0.732-alpha)));
-            };
-            double intg1 = 1 / Sqrt(fu) * (GaussLegendreRule.Integrate(f1, 0, Sqrt(fu)*(config.xfD +0.732) , 32) + GaussLegendreRule.Integrate(f1, 0, Sqrt(fu)*Abs(config.xfD - 0.732), 32));
-            double intg2 = GaussLegendreRule.Integrate(f2, -config.xfD, config.xfD, 32);
+            var (intg1, intg2) = ComputeFractureIntegrals(sqrtFu, config);
 
-            
-            double value_one = SpecialFunctions.BesselK1(Sqrt(fu) * config.reD);
-            double value_two = SpecialFunctions.BesselI1(Sqrt(fu) * config.reD);
-            
-            
-            //double A = value_one / (u/config.zeta/Sqrt(fu)*(SpecialFunctions.BesselK1(Sqrt(fu)) * value_two-value_one* SpecialFunctions.BesselI1(Sqrt(fu))));
-            //double B = A / value_one * value_two;
-            double value_three = 1 / (u);
-            double value_four = config.s / u; ;//
-            //double p_D = A * intg2 + B * intg1;
-            double p_D = value_three * intg1 + value_three * value_one / value_two * intg2 + value_four;
-            return p_D;           
+            double value_three = 1 / u;
+            double value_four = config.s * value_three; ;//
+            double ratio = RatioK1OverI1(sqrtFu * config.reD);
+            double p_D = value_three * intg1 + value_three * ratio * intg2 + value_four;
+            return p_D;
 
         }
 
         public static double GetPuwD_CONSTANT(double u, ReservoirConfigDoubleMedia config)
         {
 
-            double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda*config.omega*config.omegaM/config.kf/config.omegaF)
-               +config.lambdaF + config.omega * config.omegaF*u/config.zeta;
-/*            double xi = config.avgLambda * config.omegaM / config.kf / config.omegaF;
-            double fu = config.lambdaF * xi / (config.lambdaF + u * xi)
-                        + config.omega * config.omegaF / config.zeta;
-            fu *= u;*/
-            /*Debug.WriteLine("fu:\t"+fu+"\tA:\t"+ config.lambdaF * config.lambdaF / (config.lambdaF + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF)
-                + "\tA2:\t" + u * config.avgLambda * config.omega * config.omegaM / config.kf / config.omegaF
-                + "\tB:\t" + config.omega * config.omegaF * u / config.zeta);*/
-
+            double fu = ComputeFu(u, config);
+            if (fu <= 0) return double.NaN;
+            double sqrtFu = Sqrt(fu);
             //Debug.WriteLine($"u = {u}, eta = {config.avgeta}, sqrt(u/eta) = {Math.Sqrt(u / config.avgeta)}");
-            Func<double, double> f1 = (alpha) =>
-            {
-                return SpecialFunctions.BesselK0(alpha);
-            };
-            Func<double, double> f2 = (alpha) =>
-            {
-                return SpecialFunctions.BesselI0(Sqrt(fu) * (Abs(0.732 - alpha)));
-            };
-            double intg1 = 1 / Sqrt(fu) * (GaussLegendreRule.Integrate(f1, 0, Sqrt(fu) * (config.xfD + 0.732), 32) + GaussLegendreRule.Integrate(f1, 0, Sqrt(fu) * Abs(config.xfD - 0.732), 32));
-            double intg2 = GaussLegendreRule.Integrate(f2, -config.xfD, config.xfD, 32);
+            var (intg1, intg2) = ComputeFractureIntegrals(sqrtFu, config);
 
-
-            double value_one = SpecialFunctions.BesselK0(Sqrt(fu) * config.reD);
-            double value_two = SpecialFunctions.BesselI0(Sqrt(fu) * config.reD);
-
-
-            //double A = value_one / (u/config.zeta/Sqrt(fu)*(SpecialFunctions.BesselK1(Sqrt(fu)) * value_two-value_one* SpecialFunctions.BesselI1(Sqrt(fu))));
-            //double B = A / value_one * value_two;
-            double value_three = 1 / (u);
+            double value_three = 1 / u;
             double value_four = 0;//config.sf / u;
-            //double p_D = A * intg2 + B * intg1;
-            double p_D = value_three * intg1 - value_three * value_one / value_two * intg2 + value_four;
+            double ratio = RatioK0OverI0(sqrtFu * config.reD);
+            double p_D = value_three * intg1 - value_three * ratio * intg2 + value_four;
             return p_D;
 
         }
 
         public static double GetPuwD_INFINITY(double u, ReservoirConfigDoubleMedia config)
         {
-            double xi = config.avgLambda * config.omegaM * config.omega / config.kf / config.omegaF;
-            double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
-               + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
+            double fu = ComputeFu(u, config);
+            if (fu <= 0) return double.NaN;
+            double sqrtFu = Sqrt(fu);
 
-            Func<double, double> f1 = (alpha) =>
-            {
-                return SpecialFunctions.BesselK0(alpha);
-            };
+            var (intg1, _) = ComputeFractureIntegrals(sqrtFu, config);
 
-            double intg1 = 1 / Sqrt(fu) * (GaussLegendreRule.Integrate(f1, 0, Sqrt(fu) * (config.xfD + 0.732), 32) + GaussLegendreRule.Integrate(f1, 0, Sqrt(fu) * Abs(config.xfD - 0.732), 32));
+            double value_three = 1 / u;
+            double value_four = config.s * value_three;//config.sf / u;
 
-
-
-            //double A = value_one / (u/config.zeta/Sqrt(fu)*(SpecialFunctions.BesselK1(Sqrt(fu)) * value_two-value_one* SpecialFunctions.BesselI1(Sqrt(fu))));
-            //double B = A / value_one * value_two;
-            double value_three = 1 / (u);
-            double value_four = config.s / u;//config.sf / u;
-            //double p_D = A * intg2 + B * intg1;
-            double p_D =  value_three * intg1 + value_four;
+            double p_D = value_three * intg1 + value_four;
             return p_D;
 
         }
@@ -130,8 +341,10 @@ namespace ShaleOilWellTest
         {
             double S = 3;
             double CD = 1e-1;
-            var v1 = SpecialFunctions.BesselK0(Sqrt(r * u)) + S * Sqrt(u) * SpecialFunctions.BesselK1(Sqrt(u));
-            var demon = u * (Sqrt(u) * SpecialFunctions.BesselK1(Sqrt(u)) + u * CD * (v1));
+            double sqrtRU = Sqrt(r * u);
+            double sqrtU = Sqrt(u);
+            var v1 = K0Scaled(sqrtRU) + S * sqrtU * K1Scaled(sqrtU);
+            var demon = u * (sqrtU * K1Scaled(sqrtU) + u * CD * v1);
             return v1 / demon;
         }
 
@@ -144,10 +357,9 @@ namespace ShaleOilWellTest
         public static double TestPwD_Infty(double u, ReservoirConfigDoubleMedia config)
         {
             double xi = config.avgLambda * config.omegaM * config.omega / config.kf / config.omegaF;
-            double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)  
+            double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
                + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            //fu *= u;
-            //fu = u;
+            if (fu <= 0) return double.NaN;
             int nMax = 100;
             var hD = config.h / config.rw;
             var LD = hD / Math.Cos(config.theta);
@@ -156,9 +368,7 @@ namespace ShaleOilWellTest
             Func<double, double> integrand = eta =>
             {
                 double rD = Math.Sqrt(eta * eta * Math.Sin(config.theta) * Math.Sin(config.theta));
-                double value = SpecialFunctions.BesselK0(
-                    rD * Math.Sqrt(fu)
-                );
+                double value = K0Scaled(rD * Math.Sqrt(fu));
                 double sum = 0.0;
                 for (int n = 1; n <= nMax; n++)
                 {
@@ -167,7 +377,7 @@ namespace ShaleOilWellTest
                     );
 
                     sum += 2.0 *
-                        SpecialFunctions.BesselK0(rD * lambda) *
+                        K0Scaled(rD * lambda) *
                         Math.Cos(n * Math.PI * eta * cosT / hD);
                 }
                 value += sum;
@@ -189,7 +399,7 @@ namespace ShaleOilWellTest
             double xi = config.avgLambda * config.omegaM * config.omega / config.kf / config.omegaF;
             double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
                + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            //fu = u;
+            if (fu <= 0) return double.NaN;
             int nMax = 100;
             var hD = config.h / config.rw;
             var LD = hD / Math.Cos(config.theta);
@@ -209,9 +419,9 @@ namespace ShaleOilWellTest
                 double k0_r = lambda0 * rD;
 
                 double value =
-                    SpecialFunctions.BesselK0(k0_r)
-                  + (SpecialFunctions.BesselK1(k0_re) / SpecialFunctions.BesselI1(k0_re))
-                    * SpecialFunctions.BesselI0(k0_r);
+                    K0Scaled(k0_r)
+                  + RatioK1OverI1(k0_re)
+                    * I0Scaled(k0_r);
 
                 // ---------- n >= 1 ----------
                 double sum = 0.0;
@@ -226,9 +436,9 @@ namespace ShaleOilWellTest
                     double k_r = lambda * rD;
 
                     double radialKernel =
-                        SpecialFunctions.BesselK0(k_r)
-                      + (SpecialFunctions.BesselK1(k_re) / SpecialFunctions.BesselI1(k_re))
-                        * SpecialFunctions.BesselI0(k_r);
+                        K0Scaled(k_r)
+                      + RatioK1OverI1(k_re)
+                        * I0Scaled(k_r);
 
                     sum += 2.0
                         * radialKernel
@@ -254,7 +464,7 @@ namespace ShaleOilWellTest
             double xi = config.omegaM * config.omega / config.zeta / config.omegaF;
             double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
                + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            //fu = u;
+            if (fu <= 0) return double.NaN;
             int nMax = 100;
             var hD = config.h / config.rw;
             var LD = hD / Math.Cos(config.theta);
@@ -274,9 +484,9 @@ namespace ShaleOilWellTest
                 double k0_r = lambda0 * rD;
 
                 double value =
-                    SpecialFunctions.BesselK0(k0_r)
-                  - (SpecialFunctions.BesselK0(k0_re) / SpecialFunctions.BesselI0(k0_re))
-                    * SpecialFunctions.BesselI0(k0_r);
+                    K0Scaled(k0_r)
+                  - RatioK0OverI0(k0_re)
+                    * I0Scaled(k0_r);
 
                 // ---------- n >= 1 ----------
                 double sum = 0.0;
@@ -291,9 +501,9 @@ namespace ShaleOilWellTest
                     double k_r = lambda * rD;
 
                     double radialKernel =
-                        SpecialFunctions.BesselK0(k_r)
-                      - (SpecialFunctions.BesselK0(k_re) / SpecialFunctions.BesselI0(k_re))
-                        * SpecialFunctions.BesselI0(k_r);
+                        K0Scaled(k_r)
+                      - RatioK0OverI0(k_re)
+                        * I0Scaled(k_r);
 
                     sum += 2.0
                         * radialKernel
@@ -314,12 +524,12 @@ namespace ShaleOilWellTest
 
         }
         public static double TestPwCD(double u, ReservoirConfigDoubleMedia config)
-        {   
-            double PD = TestPwD_Infty(u, config);
+        {
+            double PD = TestPwD_S_Constant(u, config);
             double ct = (config.phiF * config.ctf + config.phiM * config.ctm);
             double CD = config.Cs / (2.0 * Math.PI * ct * config.h_t * config.rw * config.rw);
-            CD = 3e-3;
-            double S = 1;
+            CD = 5e-3;
+            double S = 0;
             double pwd = (u * PD + S) / (u + CD * u * u * (u * PD + S));
             return pwd;
         }
@@ -328,39 +538,86 @@ namespace ShaleOilWellTest
         // 按照我其他代码的习惯，把test code 中的代码修改为多层
         public static double MultiTestGetf(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
-            return Stehfest.InverseLaplace(t, n, s => MultiTestPwCD(s, config));
+            return Stehfest.InverseLaplace(t, n, s => MultiTestPwCD_Original(s, config));
+            //return Stehfest.InverseLaplace(t, n, s => MultiTestPwCD(s, config));
         }
         public static double MultiTestGetDf(double pwf, double T, int n, ReservoirConfigDoubleMedia[] config)
         {
-            double eps = 1e-3; // 0.1% log step
-            double pwf2 = MultiTestGetf(T * (1.0 + eps), n, config);
+            double eps = Max(1e-5, Min(5e-3, 0.01 / (1.0 + T)));
+            double tPlus = T * (1.0 + eps);
+            double tMinus = T * (1.0 - eps);
+            double fPlus = MultiTestGetf(tPlus, n, config);
+            double fMinus = MultiTestGetf(tMinus, n, config);
 
-            return (pwf2 - pwf) / eps;   // 不要 Abs
+            return (fPlus - fMinus) / (2.0 * eps);
         }
 
         public static double MultiTestPwD(double u, ReservoirConfigDoubleMedia[] config)
         {
-            double pwc = 0;
+            double numerator = 1.0 / u;
+            double denominator = 0.0;
+
             foreach (var c in config)
             {
-                pwc += 1/TestPwD_Infty(u, c);
-            }
-            //pwc /= u * u;
-            return 1/pwc;
-        }
+                double G = TestPwD_S_Constant(u, c); // 已积分的 \bar{G}_{wDj}(u)
+                if (double.IsNaN(G) || double.IsInfinity(G)) continue;
 
-        public static double MultiTestPwCD(double u, ReservoirConfigDoubleMedia[] config)
+                double pi = c.PiD;
+                double denomTerm = (u * G - pi);
+                if (denomTerm == 0) continue;
+
+                denominator += 1.0 / denomTerm;
+
+                double numTerm = (u * u * G - pi);
+                if (numTerm == 0) continue;
+                numerator += pi / numTerm;
+            }
+
+            if (denominator == 0) return double.NaN;
+            return numerator / denominator;
+        }
+        public static double MultiTestPwCD_Original(double u, ReservoirConfigDoubleMedia[] config)
         {
             double pwc = 0;
             double CD = 0;
             foreach (var c in config)
             {
-                pwc += 1 / TestPwD_Infty(u, c);
+                pwc += 1 / TestPwD_S_Constant_MathNet(u, c);//TestPwD_S_Constant_MathNet
                 CD += c.Cs / (6.2832 * c.avgphiCt * c.h_t * c.rw * c.rw);
             }
-            //pwc /= u * u;            
-            
-            return 1 / (pwc + u*u*CD);
+
+            return 1 / (pwc + u * u * CD);
+        }
+
+        public static double MultiTestPwCD(double u, ReservoirConfigDoubleMedia[] config)
+        {
+            double sumCD = 0.0;
+            double numerator = 1.0 / u;
+            double denominator = 0.0;
+            double[] piD = new double[config.Length];
+            foreach (var c in config)
+            {
+                double G = TestPwD_S_Constant(u, c); // \bar{G}_{wDj}(u)
+                if (double.IsNaN(G) || double.IsInfinity(G)) continue;
+
+                double pi = 0;
+                double CDj = c.Cs / (6.2832 * c.avgphiCt * c.h_t * c.rw * c.rw);
+                sumCD += CDj;
+
+                double denomTerm = (u * G - pi);
+                if (denomTerm != 0)
+                {
+                    denominator += 1.0 / denomTerm;
+                }
+
+                double numTerm = (u * u * G - pi);
+                double invNum = numTerm != 0 ? 1.0 / numTerm : 0.0;
+                numerator += pi * (invNum + CDj);
+            }
+
+            denominator += u * sumCD;
+            if (denominator == 0) return double.NaN;
+            return numerator / denominator;
         }
 
         #endregion
@@ -370,8 +627,7 @@ namespace ShaleOilWellTest
             double xi = config.omegaM * config.omega / config.zeta / config.omegaF;
             double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
                + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            //fu *= u;
-            //fu = u;
+            if (fu <= 0) return double.NaN;
             int nMax = 100;
             var hD = config.h / config.rw;
             var LD = hD / Math.Cos(config.theta);
@@ -390,8 +646,8 @@ namespace ShaleOilWellTest
                 double k0 = Math.Sqrt(fu);
                 double x0 = k0 * rD;
 
-                double value = SpecialFunctions.BesselK0(x0) 
-                + config.s * x0 * SpecialFunctions.BesselK1(x0);
+                double value = K0Scaled(x0) 
+                + config.s * x0 * K1Scaled(x0);
 
                 double sum = 0.0;
                 for (int n = 1; n <= nMax; n++)
@@ -404,7 +660,7 @@ namespace ShaleOilWellTest
 
                     double term =
                         2.0 *
-                        (SpecialFunctions.BesselK0(x) + config.s)
+                        (K0Scaled(x) + config.s * x * K1Scaled(x))
                         * Math.Cos(n * Math.PI * eta * cosT / hD);
                     sum += term;
                 }
@@ -427,7 +683,7 @@ namespace ShaleOilWellTest
             double xi = config.avgLambda * config.omegaM * config.omega / config.kf / config.omegaF;
             double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
                + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            //fu = u;
+            if (fu <= 0) return double.NaN;
             int nMax = 100;
             var hD = config.h / config.rw;
             var LD = hD / Math.Cos(config.theta);
@@ -447,9 +703,11 @@ namespace ShaleOilWellTest
                 double k0_r = lambda0 * rD;
 
                 double value =
-                    SpecialFunctions.BesselK0(k0_r)
-                  + (SpecialFunctions.BesselK1(k0_re) / SpecialFunctions.BesselI1(k0_re))
-                    * SpecialFunctions.BesselI0(k0_r);
+                    K0Scaled(k0_r)
+                  + RatioK1OverI1(k0_re) * I0Scaled(k0_r)
+                  + config.s * k0_r *
+                    (K1Scaled(k0_r)
+                     - RatioK1OverI1(k0_re) * I1Scaled(k0_r));
 
                 // ---------- n >= 1 ----------
                 double sum = 0.0;
@@ -464,9 +722,11 @@ namespace ShaleOilWellTest
                     double k_r = lambda * rD;
 
                     double radialKernel =
-                        SpecialFunctions.BesselK0(k_r)
-                      + (SpecialFunctions.BesselK1(k_re) / SpecialFunctions.BesselI1(k_re))
-                        * SpecialFunctions.BesselI0(k_r);
+                        K0Scaled(k_r)
+                      + RatioK1OverI1(k_re) * I0Scaled(k_r)
+                      + config.s * k_r *
+                        (K1Scaled(k_r)
+                         - RatioK1OverI1(k_re) * I1Scaled(k_r));
 
                     sum += 2.0
                         * radialKernel
@@ -492,7 +752,7 @@ namespace ShaleOilWellTest
             double xi = config.omegaM * config.omega / config.zeta / config.omegaF;
             double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
                + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
-            //fu = u;
+            if (fu <= 0) return double.NaN;
             int nMax = 100;
             var hD = config.h / config.rw;
             var LD = hD / Math.Cos(config.theta);
@@ -512,9 +772,11 @@ namespace ShaleOilWellTest
                 double k0_r = lambda0 * rD;
 
                 double value =
-                    SpecialFunctions.BesselK0(k0_r)
-                  - (SpecialFunctions.BesselK0(k0_re) / SpecialFunctions.BesselI0(k0_re))
-                    * SpecialFunctions.BesselI0(k0_r);
+                    K0Scaled(k0_r)
+                  - RatioK0OverI0(k0_re) * I0Scaled(k0_r)
+                  + config.s * k0_r *
+                    (K1Scaled(k0_r)
+                     - RatioK0OverI0(k0_re) * I1Scaled(k0_r));
 
                 // ---------- n >= 1 ----------
                 double sum = 0.0;
@@ -529,9 +791,11 @@ namespace ShaleOilWellTest
                     double k_r = lambda * rD;
 
                     double radialKernel =
-                        SpecialFunctions.BesselK0(k_r)
-                      - (SpecialFunctions.BesselK0(k_re) / SpecialFunctions.BesselI0(k_re))
-                        * SpecialFunctions.BesselI0(k_r);
+                        K0Scaled(k_r)
+                      - RatioK0OverI0(k_re) * I0Scaled(k_r)
+                      + config.s * k_r *
+                        (K1Scaled(k_r)
+                         - RatioK0OverI0(k_re) * I1Scaled(k_r));
 
                     sum += 2.0
                         * radialKernel
@@ -546,22 +810,93 @@ namespace ShaleOilWellTest
                 integrand,
                 -LD / 2.0,
                 +LD / 2.0,
-                32
+                64
             );
             return integral / u / LD;
 
+        }
+
+        /// <summary>
+        /// 原始 MathNet Bessel 版本（无缩放），用于对比数值差异。
+        /// </summary>
+        public static double TestPwD_S_Constant_MathNet(double u, ReservoirConfigDoubleMedia config)
+        {
+            double xi = config.omegaM * config.omega / config.zeta / config.omegaF;
+            double fu = -config.lambdaF * config.lambdaF / (config.lambdaF + u * xi)
+               + config.lambdaF + config.omega * config.omegaF * u / config.zeta;
+            if (fu <= 0) return double.NaN;
+            int nMax = 100;
+            var hD = config.h / config.rw;
+            var LD = hD / Math.Cos(config.theta);
+            double sinT = Math.Sin(config.theta);
+            double cosT = Math.Cos(config.theta);
+
+            Func<double, double> integrand = eta =>
+            {
+                double rD = Math.Sqrt(
+                    eta * eta * sinT * sinT
+                );
+
+                double lambda0 = Math.Sqrt(fu);
+                double k0_re = lambda0 * config.reD;
+                double k0_r = lambda0 * rD;
+
+                double value =
+                    SpecialFunctions.BesselK0(k0_r)
+                  - (SpecialFunctions.BesselK0(k0_re) / SpecialFunctions.BesselI0(k0_re))
+                    * SpecialFunctions.BesselI0(k0_r)
+                  + config.s * k0_r *
+                    (SpecialFunctions.BesselK1(k0_r)
+                     - (SpecialFunctions.BesselK0(k0_re) / SpecialFunctions.BesselI0(k0_re))
+                        * SpecialFunctions.BesselI1(k0_r));
+
+                double sum = 0.0;
+                for (int n = 1; n <= nMax; n++)
+                {
+                    double lambda = Math.Sqrt(
+                       fu + n * n * Math.PI * Math.PI / (hD * hD)
+                    );
+
+                    double k_re = lambda * config.reD;
+                    double k_r = lambda * rD;
+
+                    double radialKernel =
+                        SpecialFunctions.BesselK0(k_r)
+                      - (SpecialFunctions.BesselK0(k_re) / SpecialFunctions.BesselI0(k_re))
+                        * SpecialFunctions.BesselI0(k_r)
+                      + config.s * k_r *
+                        (SpecialFunctions.BesselK1(k_r)
+                         - (SpecialFunctions.BesselK0(k_re) / SpecialFunctions.BesselI0(k_re))
+                            * SpecialFunctions.BesselI1(k_r));
+
+                    sum += 2.0
+                        * radialKernel
+                        * Math.Cos(n * Math.PI * eta * cosT / hD);
+                }
+
+                value += sum;
+                return value;
+            };
+
+            double integral = GaussLegendreRule.Integrate(
+                integrand,
+                -LD / 2.0,
+                +LD / 2.0,
+                64
+            );
+            return integral / u / LD;
         }
         #endregion
         public static double[] GetPwjD(double u, ReservoirConfigDoubleMedia[] config)
         {
             double[] value = new double[config.Length];
-            for(int i = 0; i < config.Length; i++)
+            for (int i = 0; i < config.Length; i++)
             {
                 value[i] = GetPuwD_RECTANGULAR(u, config[i]);
                 //value[i] = GetPuwD_CONSTANT(u, config[i]);
                 //value[i] = GetPuwD_INFINITY(u, config[i]);
             }
-            
+
             return value;
         }
 
@@ -575,15 +910,30 @@ namespace ShaleOilWellTest
             return pwd;
         }
 
-        public static double GetPwCD(double u, ReservoirConfigDoubleMedia[] config)
+        public static double GetPwCD(double u, ReservoirConfigDoubleMedia[] config, double[]? precomputedPuwD = null)
         {
             double value_1 = 0;
             double value_2 = 0;
-            for (int i = 0; i < config.Length; i++)
+            if (precomputedPuwD != null)
             {
-                value_1 += 1 / GetPuwD_RECTANGULAR(u, config[i]);
-                //value_1 += 1 / GetPuwD_CONSTANT(u, config[i]);
-                //value_1 += 1 / GetPuwD_INFINITY(u, config[i]);;
+                if (precomputedPuwD.Length != config.Length)
+                {
+                    throw new ArgumentException("预计算的压力长度必须与层数一致", nameof(precomputedPuwD));
+                }
+
+                for (int i = 0; i < precomputedPuwD.Length; i++)
+                {
+                    value_1 += 1 / precomputedPuwD[i];
+                }
+            }
+            else
+            {
+                for (int i = 0; i < config.Length; i++)
+                {
+                    value_1 += 1 / GetPuwD_RECTANGULAR(u, config[i]);
+                    //value_1 += 1 / GetPuwD_CONSTANT(u, config[i]);
+                    //value_1 += 1 / GetPuwD_INFINITY(u, config[i]); ;
+                }
             }
             //井筒系数无因次化
             for (int i = 0; i < config.Length; i++)
@@ -594,15 +944,14 @@ namespace ShaleOilWellTest
             return value;
         }
 
-
         public static double[] 分层产量GetQ(double u, ReservoirConfigDoubleMedia[] config)
         {
             double pwd = 0;
             var pvalue = GetPwjD(u, config).ToArray();
-            pwd = GetPwCD(u,config);
+            pwd = GetPwCD(u, config, pvalue);
 
             double[] value = new double[config.Length];
-            
+
             for (int i = 0; i < config.Length; i++)
             {
                 value[i] = pwd / u / pvalue[i];//* ( config[i].xfD)
@@ -614,7 +963,7 @@ namespace ShaleOilWellTest
         {
             double[] value = new double[config.Length];
             var pvalue = GetPwjD(u, config);
-            for (int i = 0;i < config.Length; i++)
+            for (int i = 0; i < config.Length; i++)
             {
                 value[i] = 1 / u / u / pvalue[i];
             }
@@ -628,26 +977,24 @@ namespace ShaleOilWellTest
             {
                 double ln2 = Math.Log(2) / t;
                 //Debug.WriteLine("ln2: " + ln2);
-               
+
                 for (int i = 1; i <= 8; i++)
                 {
                     var value = 产量递减GetQ(ln2 * i, config);
                     //f += GetV(n, i) * GetPwD(ln2 * i, config);//无井储
-                    for(int j = 0; j < Q.Length; j++)
+                    for (int j = 0; j < Q.Length; j++)
                     {
-                        Q[j] += GetV(6, i) * value[j];//井储
-                    }         
+                        //Q[j] += GetV(6, i) * value[j];//井储
+                    }
                 }
-                for(int i = 0;i < Q.Length; i++)
+                for (int i = 0; i < Q.Length; i++)
                 {
-                    Q[i] *= ln2  * (Math.Log(config[i].reD) - 0.5);
+                    Q[i] *= ln2 * (Math.Log(config[i].reD) - 0.5);
                 }
-                
+
             }
             return Q;
         }
-        
-        
 
         public static double[] GetQD(double u, double[] pwd)
         {
@@ -662,11 +1009,11 @@ namespace ShaleOilWellTest
             {
                 value[i] = pw / pwd[i] / u;
             }
-            
+
             return value;
         }
 
-        public static double[] GetQCD(double u, double[] pwd,double pwf)
+        public static double[] GetQCD(double u, double[] pwd, double pwf)
         {
             double[] value = new double[pwd.Length];
 
@@ -703,20 +1050,22 @@ namespace ShaleOilWellTest
         }
 
         public static double Getf_cui(double t, int n, ReservoirConfigDoubleMedia config)
-        {   
-            return Stehfest.InverseLaplace(t, n, s => TestPwD_S_Infty(s, config));
+        {
+            return Stehfest.InverseLaplace(t, n, s => TestPwCD(s, config));//TestPwCD
             //return Stehfest.InverseLaplace(t, n, s => TestPwD_Constant(s, config));
             //return Stehfest.InverseLaplace(t, n, s => TestPwD_Rectangular(s, config));
             //return Stehfest.InverseLaplace(t, n, s => 直线断层边界PwD(s, config, 10000,1));
         }
         public static double GetDf_cui(double pwf, double T, int n, ReservoirConfigDoubleMedia config)
         {
-/*            double pwf2 = Getf_cui(T * (1.0001), n, config);
-            return Math.Abs(pwf2 - pwf) / .0001;*/
-            double eps = 1e-3; // 0.1% log step
-            double pwf2 = Getf_cui(T * (1.0 + eps), n, config);
+            // 对数刻度对称差分，进一步压制导数噪声
+            double eps = Max(1e-5, Min(5e-3, 0.01 / (1.0 + T)));
+            double tPlus = T * (1.0 + eps);
+            double tMinus = T * (1.0 - eps);
+            double fPlus = Getf_cui(tPlus, n, config);
+            double fMinus = Getf_cui(tMinus, n, config);
 
-            return (pwf2 - pwf) / eps;   // 不要 Abs
+            return (fPlus - fMinus) / (2.0 * eps);
         }
         public static double[] GetQ(double t, int n, ReservoirConfigDoubleMedia[] config)
         {
@@ -726,17 +1075,17 @@ namespace ShaleOilWellTest
                 double ln2 = Math.Log(2) / t;
                 for (int i = 1; i <= n; i++)
                 {
-                    double[] qwd = 分层产量GetQ(ln2 * i, config);                   
-        
+                    double[] qwd = 分层产量GetQ(ln2 * i, config);
+
                     for (int j = 0; j < config.Length; j++)
                     {
-                        qwf[j] += GetV(n, i) * qwd[j];
+                        //qwf[j] += GetV(n, i) * qwd[j];
                     }
                 }
                 for (int i = 0; i < config.Length; i++)
                 {
                     qwf[i] = ln2 * qwf[i];
-                }                
+                }
             }
             return qwf;
         }
@@ -751,12 +1100,12 @@ namespace ShaleOilWellTest
                 {
                     double[] puwd = GetPwjD(ln2 * i, config);
                     //Debug.WriteLine("PwjD: " + puwd[0] + " " + puwd[1]);
-                    double pwf = GetPwCD(ln2 * i, config);
+                    double pwf = GetPwCD(ln2 * i, config, puwd);
                     double[] qwd = GetQCD(ln2 * i, puwd, pwf);
                     //Debug.WriteLine("QD: " + qwd[0] + " " + qwd[1]);
                     for (int j = 0; j < config.Length; j++)
                     {
-                        qwf[j] = GetV(n, i) * qwd[j];
+                        //qwf[j] = GetV(n, i) * qwd[j];
                     }
                 }
                 for (int i = 0; i < config.Length; i++)
@@ -766,63 +1115,5 @@ namespace ShaleOilWellTest
             }
             return qwf;
         }
-
-        public static double GetDf(double pwf, double T, int n, ReservoirConfigDoubleMedia[] config)
-        {
-            double pwf2 = Getf(T * (1.001), n, config);
-            return Math.Abs(pwf2 - pwf) / .001;
-
-        }
-
-        public static double GetV(int n, int i)
-        {
-            double V = 0;
-            if (n % 2 == 0)
-            {
-                int k = Convert.ToInt32((i + 1) / 2);
-                for (int j = k; j <= Math.Min(n / 2, i); j++)
-                {
-                    V += GetV_son(n, i, j);
-                }
-                V = Math.Pow(-1, n / 2 + i) * V;
-            }
-            return V;
-        }
-
-        public static double GetV_son(int n, int i, int k)
-        {
-            double V_son = 0;
-            if (n % 2 == 0)
-            {
-                V_son = Math.Pow(k, n / 2) * GetFactorial(2 * k) / (GetFactorial(n / 2 - k) * GetFactorial(k) * GetFactorial(k - 1) * GetFactorial(i - k) * GetFactorial(2 * k - i));
-            }
-            return V_son;
-
-        }
-
-        public static int GetFactorial(int n)
-        {
-            int N = n;
-            if (n >= 2)
-            {
-                do
-                {
-                    N *= (n - 1);
-                    n--;
-                }
-                while (n > 2);
-            }
-            else if (n == 1 || n == 0)
-            {
-                N = 1;
-            }
-            else
-            {
-                N = 0;
-            }
-            return N;
-
-        }
-
     }
 }
