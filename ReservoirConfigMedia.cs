@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -7,10 +8,10 @@ using MathNet.Numerics.Distributions;
 
 namespace ShaleOilWellTest
 {
-    internal class ReservoirConfigOneMedia(double h, double k, double Bo, double mu,
+    internal class ReservoirConfigMedia(double h, double k, double Bo, double mu,
         double ct, double Cs, double rw, double re, double phi, double s, double sf,double xf)
     {
-        public double Pi;
+        public static double Pi;
         public double h = h;
         public double k = k;
         public double Bo = Bo;
@@ -34,7 +35,7 @@ namespace ShaleOilWellTest
         public double avgeta { get; set; }
         public double CsD { get; set; }
         public double reD { get; set; }
-        public void factorlessness(ReservoirConfigOneMedia config,double omega,double zeta)
+        public void factorlessness(ReservoirConfigMedia config,double omega,double zeta)
         {
              reD = re / xf;
              h_t = h + config.h;
@@ -56,7 +57,7 @@ namespace ShaleOilWellTest
     internal class ReservoirConfigDoubleMedia(double h, double k, double Bo, double mu,
         double ctm,double ctf, double Cs, double rw, double re, double phiM, double phiF, double s, double sf, double xf)
     {
-        public double Pi;
+        public static double Pi;
         public double h = h;
         public double kf = k;
         public double Bo = Bo;
@@ -71,20 +72,25 @@ namespace ShaleOilWellTest
         public double s = s;
         public double sf = sf;
         public double xf = xf;
+        public double theta { get; set; }
+        public double xfD;
         public double h_t { get; set; }
-        public double reD { get { return re / xf; } set { } }
+        public double reD { get { return re / rw; } set { } }
         public double avgLambda { get; set; }
         public double avgphiCt { get; set; }
         public double eta { get; set; }
         public double omega { get; set; }
         public double zeta { get; set; }
         public double totalPhiCt { get; set; }
-        public double omegaM => omega * 0.95;    
-        public double omegaF => omega * 0.05;     
+        public double omegaM=0.95;    
+        public double omegaF=0.05;     
         public double lambdaF { get; set; }
         public void factorlessness(ReservoirConfigDoubleMedia[] configs)
         {
-            reD = re / xf;
+            double phiCtM = 0.0;
+            var baselayer = configs[0];
+            reD = re / baselayer.rw;
+            xfD = xf / baselayer.xf;
             for (int i = 0; i < configs.Length; i++)
             {
                 h_t = configs[i].h;
@@ -92,16 +98,17 @@ namespace ShaleOilWellTest
                 avgLambda += (configs[i].kf / configs[i].mu) * configs[i].h;
                 //平均储容系数
                 avgphiCt += (configs[i].phiF * configs[i].ctf * configs[i].h);
-
+                phiCtM += (configs[i].phiM * configs[i].ctm);
             }
             avgLambda *= 1 / h_t;
             avgphiCt *= 1 / h_t;
             //平均导压系数
             eta = (avgLambda / avgphiCt);
-
-            /*zeta = k / mu * h / (avgLambda * h_t);
-            omega = phi * ct * h / (avgphiCt * h_t);*/
-
+/*            this.omegaM = this.phiM * this.ctm / (avgphiCt * h_t + phiCtM);
+            this.omegaF = 1 - this.omegaM;*/
+            zeta = k / mu * h / (avgLambda * h_t);
+            omega = phiF * ctf * h / (avgphiCt * h_t);
+            Debug.WriteLine($"zeta:{ zeta}, omega:{ omega}");
         }
     }
 }

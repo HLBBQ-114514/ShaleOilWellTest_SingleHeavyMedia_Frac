@@ -30,6 +30,7 @@
         {
             button1 = new Button();
             textBox1 = new TextBox();
+            checkBox1 = new CheckBox();
             SuspendLayout();
             // 
             // button1
@@ -47,14 +48,25 @@
             textBox1.Location = new Point(182, 27);
             textBox1.Multiline = true;
             textBox1.Name = "textBox1";
-            textBox1.Size = new Size(514, 356);
+            textBox1.Size = new Size(916, 356);
             textBox1.TabIndex = 1;
+            // 
+            // checkBox1
+            // 
+            checkBox1.AutoSize = true;
+            checkBox1.Location = new Point(74, 170);
+            checkBox1.Name = "checkBox1";
+            checkBox1.Size = new Size(89, 21);
+            checkBox1.TabIndex = 2;
+            checkBox1.Text = "checkBox1";
+            checkBox1.UseVisualStyleBackColor = true;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(1162, 450);
+            Controls.Add(checkBox1);
             Controls.Add(textBox1);
             Controls.Add(button1);
             Name = "Form1";
@@ -67,5 +79,6 @@
 
         private Button button1;
         private TextBox textBox1;
+        private CheckBox checkBox1;
     }
 }
